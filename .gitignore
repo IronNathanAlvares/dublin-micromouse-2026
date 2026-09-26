@@ -1,0 +1,8 @@
+*.exe
+sim/mouse
+__pycache__/
+
+# Downloaded, not ours: see README for how to get them
+tools/mms/
+tools/mazefiles/
+package_esp32_index.json
