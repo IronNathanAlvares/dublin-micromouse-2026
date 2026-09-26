@@ -231,6 +231,25 @@ differ, so calibrate on the real maze.
 Use `m` in the Serial Monitor to print the map the mouse has built. It's the
 fastest way to spot a sensor that reports walls wrongly.
 
+## AI helpers
+
+If a teammate opens this repo in Claude Code, these are ready to use. They follow the event's
+*C3 Working with AI Agents* guide: real serial evidence first, one small
+change, test, commit.
+
+| Type this | It does |
+|---|---|
+| `/flash` | build + upload, then checks every sensor says PASS at boot |
+| `/calibrate` | walks through the calibration table using real readings, edits `config.h`, commits each step |
+| `/debug-kit` | runs the event's Debug Kit steps in order and says which wire to check |
+| `/test` | all offline checks (build, solver, virtual robot) before a commit |
+| "use the hardware-debugger agent" | diagnoses a real-mouse fault from serial logs |
+| "use the sim-tester agent" | checks a code change on the virtual robot across mazes and seeds |
+
+They rely on `tools/mouse.py`, which saves every serial session to `logs/`.
+Paste those logs (not descriptions) when asking any AI or teammate for help.
+The facts they need are in [docs/CONTEXT.md](docs/CONTEXT.md).
+
 ## Team workflow
 
 Use the steps in the event's *C2 Git and GitHub Basics* guide. Commit after

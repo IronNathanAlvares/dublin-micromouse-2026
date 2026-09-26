@@ -117,6 +117,7 @@ int main(int argc, char** argv) {
   Solver solver;
   solver.maxExploreRounds = argc > 1 ? std::atoi(argv[1]) : 4;  // tools/fake_mms.py tries others
   const bool useDiagonals = !(argc > 2 && std::string(argv[2]) == "nodiag");
+  planner.costs.turnPenalty = argc > 3 ? float(std::atof(argv[3])) : planner.costs.turnPenalty;
   solver.reset(API::mazeWidth(), API::mazeHeight());
   log("Maze " + std::to_string(solver.maze.width) + "x" + std::to_string(solver.maze.height));
 
@@ -169,7 +170,9 @@ int main(int argc, char** argv) {
         drawDiagonalPlan(diag);
         log("Speed run " + std::to_string(speedRuns) + " (diagonal): " +
             std::to_string(diag.stepCount) + " commands, mms time " +
-            std::to_string(int(diag.time + 0.5)) + " (grid-only route: " +
+            std::to_string(int(diag.time + 0.5)) + ", mms run score " +
+            std::to_string(int(diag.mmsTurns + diag.mmsDistance + 0.5)) + " (" +
+            std::to_string(diag.mmsTurns) + " turns) (grid-only route: " +
             std::to_string(int(gridTime + 0.5)) + ")");
         if (!driveDiagonal(diag)) {
           log("CRASHED on the diagonal speed run - the planner is wrong");
@@ -182,9 +185,17 @@ int main(int argc, char** argv) {
         solver.phase = Phase::RETURN_TO_START;
       } else {
         drawPlan(solver);
+        int turns = 0;
+        float distance = 0;
+        for (int i = 0; i < solver.planLength; i++) {
+          turns += solver.plan[i].turn == Turn::AROUND ? 2 : solver.plan[i].turn == Turn::NONE ? 0 : 1;
+          const int half = 2 * solver.plan[i].cells;  // mms counts half steps
+          distance += half > 2 ? half / 2.0f + 1 : half;
+        }
         log("Speed run " + std::to_string(speedRuns) + ": " + std::to_string(solver.planLength) +
             " moves, cost " + std::to_string(solver.planCost) + ", mms time " +
-            std::to_string(int(gridTime + 0.5)));
+            std::to_string(int(gridTime + 0.5)) + ", mms run score " +
+            std::to_string(int(turns + distance + 0.5)) + " (" + std::to_string(turns) + " turns)");
       }
       lastPhase = solver.phase;
       continue;

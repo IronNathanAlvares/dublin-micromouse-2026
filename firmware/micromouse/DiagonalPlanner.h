@@ -38,6 +38,7 @@ struct DiagCosts {
   float straightHalf = 50.0f;  // half a cell along the grid
   float diagonalHalf = 70.71f; // edge middle to the next edge middle
   float turn45 = 16.66f;       // 90 degrees = two of these
+  float turnPenalty = 0;       // extra per 45 degrees of turning: fewer, simpler turns
 };
 
 class DiagonalPlanner {
@@ -56,6 +57,10 @@ class DiagonalPlanner {
   int pathLength = 0;
   float time = 0;
   int endX = 0, endY = 0;  // goal cell reached, facing endDir
+  // What the mms simulator's score counts for this run: every turn command is
+  // one turn (45 or 90), and long straight commands count less distance.
+  int mmsTurns = 0;
+  float mmsDistance = 0;
   Dir endDir = NORTH;
 
   // From the centre of cell (x,y) facing d to the centre of a goal cell,
@@ -76,8 +81,8 @@ class DiagonalPlanner {
         goal = u;
         break;
       }
-      relax(u, id(sx, sy, (h + 7) % 8), costs.turn45);
-      relax(u, id(sx, sy, (h + 1) % 8), costs.turn45);
+      relax(u, id(sx, sy, (h + 7) % 8), costs.turn45 + costs.turnPenalty);
+      relax(u, id(sx, sy, (h + 1) % 8), costs.turn45 + costs.turnPenalty);
       const int nx = sx + DX8[h], ny = sy + DY8[h];
       if (nx >= 0 && ny >= 0 && nx < sw && ny < sh && !blocked(maze, sx, sy, h, optimistic)) {
         relax(u, id(nx, ny, h), h % 2 ? costs.diagonalHalf : costs.straightHalf);
@@ -166,7 +171,24 @@ class DiagonalPlanner {
       }
     }
     if (!flushTurn(pendingTurn) || !flushHalf(pendingHalf)) return false;
+    // The real time, without the turn penalty (which only shapes the route).
     time = cost_[goal];
+    mmsTurns = 0;
+    mmsDistance = 0;
+    for (int i = 0; i < stepCount; i++) {
+      if (steps[i].kind == DiagStep::HALF_STEPS) {
+        const int n = steps[i].count;
+        mmsDistance += n > 2 ? n / 2.0f + 1 : n;  // mms Stats::getEffectiveDistance
+      } else {
+        mmsTurns++;
+      }
+    }
+    int turned45 = 0;
+    for (int i = 0; i < stepCount; i++) {
+      if (steps[i].kind == DiagStep::TURN_LEFT_45 || steps[i].kind == DiagStep::TURN_RIGHT_45) turned45++;
+      if (steps[i].kind == DiagStep::TURN_LEFT_90 || steps[i].kind == DiagStep::TURN_RIGHT_90) turned45 += 2;
+    }
+    time -= turned45 * costs.turnPenalty;
     endX = (goal / 8 / SEMI) / 2;
     endY = ((goal / 8) % SEMI) / 2;
     endDir = Dir((goal % 8) / 2);

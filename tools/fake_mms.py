@@ -188,7 +188,9 @@ def run(walls, verbose):
     sx, sy, h = 1, 1, 0  # centre of (0,0), facing north
     half_steps = 0
     goal_entries = 0
-    args = [os.environ.get("ROUNDS", "4")] + (["nodiag"] if os.environ.get("NODIAG") else [])
+    args = [os.environ.get("ROUNDS", "4"), "nodiag" if os.environ.get("NODIAG") else "diag"]
+    if os.environ.get("TURN_PENALTY"):
+        args.append(os.environ["TURN_PENALTY"])
     with tempfile.TemporaryFile("w+") as err:
         p = subprocess.Popen([MOUSE] + args, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                              stderr=err, text=True, bufsize=1)

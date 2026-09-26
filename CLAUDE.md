@@ -18,3 +18,12 @@ Micromouse for the Dublin Micromouse Open 2026 (ESP32-C6, Arduino). Read
 - Keep changes small, one behaviour at a time (event guide C3). Ask for real
   serial logs (`logs/`) before guessing at hardware faults.
 - Don't touch `debug-kit/`: it's the event's official code, kept as-is.
+
+## Ready-made helpers (Claude Code)
+
+- `/flash`: build, upload, check that every sensor says PASS at boot.
+- `/calibrate`: go through the README calibration table with real serial readings.
+- `/debug-kit`: run the event's Debug Kit steps in order to find a broken part.
+- `/test`: every offline check before a commit.
+- Agent `hardware-debugger`: diagnose a real-mouse fault from serial logs.
+- Agent `sim-tester`: check a change on the virtual robot across mazes and seeds.
