@@ -235,7 +235,7 @@ void printHelp() {
       "  D  diagonal test on open floor: half cell, 45 right, 2 diagonal half steps,\n"
       "     45 left, half cell. Should end exactly 1 cell right and 2 cells ahead\n"
       "  G  full competition run (same as pressing BOOT)\n"
-      "  x  forget the saved map");
+      "  x  forget the saved map                v  print wall-edge corrections (calibration)");
 }
 
 void handleSerial() {
@@ -277,6 +277,10 @@ void handleSerial() {
     }
     case 'G': competitionRun(); showIdleLed(); break;
     case 'x': wipeMaze(); showIdleLed(); break;
+    case 'v':
+      motion::verbose = !motion::verbose;
+      Serial.printf("verbose motion %s\n", motion::verbose ? "on" : "off");
+      break;
     default: break;
   }
 }

@@ -176,6 +176,7 @@ uint8_t address = 0;  // 0 = not found
 float biasDps = 0;
 float yawDeg = 0;     // anticlockwise positive, integrated from the gyro
 float rateDps = 0;
+float rawDps = 0;     // last reading before bias correction
 uint32_t lastMicros = 0;
 
 inline bool present(uint8_t addr) {
@@ -222,15 +223,30 @@ inline void calibrate() {
     delay(2);
   }
   biasDps = sum / SAMPLES;
+  rateDps = 0;
   lastMicros = micros();
 }
 
 inline void update() {
   if (!address) return;
-  rateDps = readRawDps() - biasDps;
+  rawDps = readRawDps();
+  const float rate = (rawDps - biasDps) * GYRO_SCALE;
   const uint32_t now = micros();
-  yawDeg += rateDps * (now - lastMicros) * 1e-6f;
+  // Trapezoid rule: average of this reading and the last one. Using only the
+  // newest reading loses ~0.5 degrees per fast turn.
+  yawDeg += 0.5f * (rate + rateDps) * (now - lastMicros) * 1e-6f;
+  rateDps = rate;
   lastMicros = now;
+}
+
+// Call only while the mouse is certainly not turning: then any reading is
+// pure bias, so nudge the bias estimate towards it. Stops slow gyro drift.
+inline void learnBias() {
+  if (!address) return;
+  // A bigger reading means it's actually still turning a little (e.g. just
+  // after a spin): drift changes far more slowly than that.
+  if (fabsf(rawDps - biasDps) > GYRO_BIAS_LEARN_MAX_DPS) return;
+  biasDps += GYRO_BIAS_LEARN_GAIN * (rawDps - biasDps);
 }
 
 }  // namespace imu

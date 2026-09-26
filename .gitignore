@@ -6,3 +6,5 @@ __pycache__/
 tools/mms/
 tools/mazefiles/
 package_esp32_index.json
+.build/
+logs/*.tmp

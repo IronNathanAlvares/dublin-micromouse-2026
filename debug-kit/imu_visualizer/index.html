@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IMU Visualizer</title>
+<style>
+  :root {
+    --bg: #0b1220;
+    --panel: #121a2b;
+    --line: #233049;
+    --text: #e6edf7;
+    --muted: #8a98b3;
+    --accent: #3ddc97;
+    --amber: #ffb020;
+    --bad: #ff5d5d;
+    --blue: #5aa9ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 16px; }
+
+  header {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center; justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  h1 { font-size: 20px; margin: 0; letter-spacing: .2px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+  button {
+    font: inherit; font-size: 14px; color: var(--text);
+    background: #1a2540; border: 1px solid var(--line);
+    padding: 8px 14px; border-radius: 10px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: #3a4d75; background: #202d4d; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #062015; border-color: var(--accent); font-weight: 600; }
+  button.primary:hover:not(:disabled) { background: #5be8ac; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+  .pill {
+    font-size: 13px; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--muted); white-space: nowrap;
+  }
+  .pill.ok   { color: var(--accent); border-color: #1f6b4d; }
+  .pill.demo { color: var(--amber);  border-color: #7a5a14; }
+  .pill.warn { color: var(--bad);    border-color: #7a2b2b; }
+
+  .banner {
+    background: #2a1d10; border: 1px solid #7a5a14; color: #ffd48a;
+    padding: 10px 14px; border-radius: 10px; margin-bottom: 16px; font-size: 14px;
+  }
+
+  .grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; }
+  @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+  .stack { display: grid; gap: 16px; align-content: start; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px;
+  }
+  .card h2 {
+    font-size: 12px; font-weight: 600; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 10px;
+  }
+
+  /* --- 3D board --- */
+  .card.left { display: flex; flex-direction: column; }
+  .scene {
+    perspective: 900px; flex: 1; min-height: 300px;
+    display: grid; place-items: center; overflow: hidden;
+  }
+  .world {
+    position: relative; width: 340px; height: 340px;
+    transform-style: preserve-3d; transform: rotateX(58deg) scale(1.3);
+  }
+  @media (max-width: 520px) {
+    .world { transform: rotateX(58deg) scale(.9); }
+    .scene { min-height: 240px; }
+  }
+  .ground {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 34px 34px;
+    border: 1px solid var(--line);
+    background-color: rgba(255,255,255,.015);
+  }
+  .shadow, .board {
+    position: absolute; left: 100px; top: 65px; width: 140px; height: 210px;
+    border-radius: 14px;
+  }
+  .shadow { background: rgba(0,0,0,.5); filter: blur(10px); }
+  .board {
+    background: linear-gradient(160deg, #12a385, #0a6b58);
+    border: 2px solid #52e6bf;
+    box-shadow: 0 0 0 1px rgba(0,0,0,.4);
+    transform: translateZ(40px);
+  }
+  .nose {
+    position: absolute; top: 10px; left: 50%; margin-left: -18px;
+    width: 36px; height: 28px; background: var(--amber);
+    clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  }
+  .chip {
+    position: absolute; left: 50%; top: 50%; width: 58px; height: 58px;
+    margin: -29px 0 0 -29px; background: #0a0f1a; border: 1px solid #38507a;
+    border-radius: 6px; display: grid; place-items: center;
+    font: 700 11px ui-monospace, Consolas, monospace; color: #7fa2d9;
+  }
+  .usb {
+    position: absolute; left: 50%; bottom: -2px; width: 44px; height: 20px;
+    margin-left: -22px; background: #c9d3e3; border-radius: 3px 3px 0 0;
+  }
+  .wheel {
+    position: absolute; bottom: 34px; width: 16px; height: 62px;
+    background: #182033; border: 1px solid #0a0f1a; border-radius: 4px;
+  }
+  .wheel.l { left: -14px; }
+  .wheel.r { right: -14px; }
+  .caption { color: var(--muted); font-size: 13px; text-align: center; margin-top: 4px; }
+
+  /* --- compass --- */
+  .dial { display: block; width: 100%; max-width: 290px; margin: 0 auto; }
+  .dial text { fill: var(--muted); font: 11px system-ui, sans-serif; }
+
+  /* --- stats --- */
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .stat { background: #0e1626; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+  .stat .k { color: var(--muted); font-size: 12px; }
+  .stat .v { font: 600 22px ui-monospace, Consolas, monospace; font-variant-numeric: tabular-nums; }
+  .stat .u { font-size: 13px; color: var(--muted); margin-left: 2px; }
+
+  canvas { width: 100%; height: 120px; display: block; }
+  .chartlabel { font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+
+  .flips { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .flips label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+
+  details.hint { margin-top: 16px; }
+  details.hint summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+  details.hint ol { margin: 8px 0 0; padding-left: 20px; color: var(--text); font-size: 14px; }
+  details.hint li { margin: 4px 0; }
+
+  #log {
+    font: 12.5px/1.5 ui-monospace, Consolas, monospace; color: #b8c4dc;
+    max-height: 150px; overflow-y: auto; white-space: pre-wrap;
+  }
+  #log .l { padding: 0; }
+  #log .bad { color: var(--bad); }
+  #log .ok  { color: var(--accent); }
+  .empty { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>IMU Visualizer</h1>
+      <div class="sub">Turn your real board and watch this one follow.</div>
+    </div>
+    <div class="controls">
+      <span class="pill" id="pill" role="status">Not connected</span>
+      <button class="primary" id="btnConnect">Connect board</button>
+      <button id="btnDemo">Try demo</button>
+      <button id="btnZero" disabled>Zero heading</button>
+      <button id="btnCal" disabled>Recalibrate</button>
+    </div>
+  </header>
+
+  <div class="banner" id="unsupported" hidden>
+    This browser can't talk to USB boards. Open this page in <b>Chrome</b> or <b>Edge</b>
+    to connect your ESP32. The demo still works here.
+  </div>
+
+  <div class="grid">
+    <section class="card left" aria-label="3D board">
+      <h2>Your board</h2>
+      <div class="scene">
+        <div class="world">
+          <div class="ground"></div>
+          <div class="shadow" id="shadow"></div>
+          <div class="board" id="board">
+            <div class="nose"></div>
+            <div class="chip">MPU</div>
+            <div class="usb"></div>
+            <div class="wheel l"></div>
+            <div class="wheel r"></div>
+          </div>
+        </div>
+      </div>
+      <div class="caption">The amber arrow is the front. Tilt and turn the real board.</div>
+    </section>
+
+    <div class="stack">
+      <section class="card" aria-label="Compass">
+        <h2>Heading</h2>
+        <svg class="dial" viewBox="-34 -18 268 238" role="img" aria-label="Compass showing heading">
+          <circle cx="100" cy="100" r="92" fill="#0e1626" stroke="#233049" stroke-width="2"/>
+          <g id="ticks"></g>
+          <text x="100" y="-4" text-anchor="middle">0°</text>
+          <text x="-6" y="104" text-anchor="end">+90°</text>
+          <text x="100" y="214" text-anchor="middle">180°</text>
+          <text x="206" y="104" text-anchor="start">−90°</text>
+          <g id="needle">
+            <polygon points="100,34 108,100 92,100" fill="#ffb020"/>
+            <polygon points="100,166 108,100 92,100" fill="#3b4a6b"/>
+          </g>
+          <circle cx="100" cy="100" r="6" fill="#e6edf7"/>
+        </svg>
+      </section>
+
+      <section class="card" aria-label="Live values">
+        <h2>Live values</h2>
+        <div class="stats">
+          <div class="stat"><div class="k">Heading</div><div><span class="v" id="vH">0.0</span><span class="u">°</span></div></div>
+          <div class="stat"><div class="k">Turn rate</div><div><span class="v" id="vG">0.0</span><span class="u">°/s</span></div></div>
+          <div class="stat"><div class="k">Pitch (nose up)</div><div><span class="v" id="vP">0.0</span><span class="u">°</span></div></div>
+          <div class="stat"><div class="k">Roll (tilt)</div><div><span class="v" id="vR">0.0</span><span class="u">°</span></div></div>
+        </div>
+        <div class="flips">
+          <span>Something backwards?</span>
+          <label><input type="checkbox" id="flipTurn"> Flip turn</label>
+          <label><input type="checkbox" id="flipPitch"> Flip pitch</label>
+          <label><input type="checkbox" id="flipRoll"> Flip roll</label>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <section class="card" style="margin-top:16px" aria-label="Graphs">
+    <h2>Last 12 seconds</h2>
+    <div class="chartlabel">Turn rate (°/s) - spikes while you rotate, flat when still</div>
+    <canvas id="cG"></canvas>
+    <div class="chartlabel">Heading (°) - climbs as you turn left, falls as you turn right</div>
+    <canvas id="cH"></canvas>
+  </section>
+
+  <section class="card" style="margin-top:16px" aria-label="Messages from the board">
+    <h2>Messages from the board</h2>
+    <div id="log"><div class="empty">Nothing yet. Connect your board, or press reset on it.</div></div>
+  </section>
+
+  <details class="hint" open>
+    <summary>How to connect</summary>
+    <ol>
+      <li>Upload <code>imu_visualizer.ino</code> to your ESP32-C6 (wired like step 2).</li>
+      <li><b>Close the Arduino Serial Monitor.</b> Only one program can use the USB port.</li>
+      <li>Click <b>Connect board</b> above and pick the ESP32's COM port.</li>
+      <li>Keep the board <b>still for one second</b> while it calibrates, then turn it.</li>
+      <li>Nothing showing up? Press <b>RESET</b> on the board, or check the messages box for a FAIL.</li>
+    </ol>
+  </details>
+
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const MAX = 300;                       // ~12 s at 25 updates a second
+  const gArr = [], hArr = [];
+  const cur = { h: 0, g: 0, p: 0, r: 0 };
+  const flips = { turn: false, pitch: false, roll: false };
+  try { Object.assign(flips, JSON.parse(localStorage.getItem('imuFlips') || '{}')); } catch (e) {}
+
+  let port = null, reader = null, writer = null;
+  let connected = false, demo = false, demoTimer = null, demoOffset = 0, demoRawH = 0;
+  let rateCount = 0, rate = 0, dirty = true;
+
+  const css = getComputedStyle(document.documentElement);
+  const COL_G = css.getPropertyValue('--blue').trim();
+  const COL_H = css.getPropertyValue('--accent').trim();
+
+  /* ---------- static drawing ---------- */
+  const ticks = $('ticks');
+  for (let a = 0; a < 360; a += 10) {
+    const major = a % 90 === 0;
+    const l = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    l.setAttribute('x1', 100); l.setAttribute('x2', 100);
+    l.setAttribute('y1', 10);  l.setAttribute('y2', major ? 22 : 16);
+    l.setAttribute('stroke', major ? '#8a98b3' : '#3b4a6b');
+    l.setAttribute('stroke-width', major ? 2 : 1);
+    l.setAttribute('transform', `rotate(${a} 100 100)`);
+    ticks.appendChild(l);
+  }
+
+  /* ---------- UI state ---------- */
+  function setPill(text, cls) {
+    const p = $('pill');
+    p.textContent = text;
+    p.className = 'pill' + (cls ? ' ' + cls : '');
+  }
+  function updateUi() {
+    $('btnConnect').textContent = connected ? 'Disconnect' : 'Connect board';
+    $('btnDemo').textContent = demo ? 'Stop demo' : 'Try demo';
+    $('btnZero').disabled = !(connected || demo);
+    $('btnCal').disabled = !connected;
+    $('btnConnect').disabled = !('serial' in navigator);
+    if (connected) setPill(rate ? `Connected · ${rate} Hz` : 'Connected · no data yet', rate ? 'ok' : 'warn');
+    else if (demo) setPill('Demo (simulated motion)', 'demo');
+    else setPill('Not connected', '');
+  }
+
+  function log(text, cls) {
+    const box = $('log');
+    if (box.firstElementChild && box.firstElementChild.classList.contains('empty')) box.innerHTML = '';
+    const d = document.createElement('div');
+    d.className = 'l' + (cls ? ' ' + cls : '');
+    d.textContent = text;
+    box.appendChild(d);
+    while (box.children.length > 200) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  /* ---------- data in ---------- */
+  function handleSample(h, g, p, r) {
+    if (flips.turn)  { h = -h; g = -g; }
+    if (flips.pitch) p = -p;
+    if (flips.roll)  r = -r;
+    cur.h = h; cur.g = g; cur.p = p; cur.r = r;
+    gArr.push(g); hArr.push(h);
+    if (gArr.length > MAX) { gArr.shift(); hArr.shift(); }
+    rateCount++;
+    dirty = true;
+  }
+
+  function handleLine(line) {
+    if (!line) return;
+    if (line.startsWith('IMU,')) {
+      const v = line.split(',').slice(1).map(Number);
+      if (v.length === 4 && v.every(Number.isFinite)) handleSample(v[0], v[1], v[2], v[3]);
+      return;
+    }
+    const text = line.replace(/^#\s?/, '');
+    log(text, /FAIL/i.test(text) ? 'bad' : /PASS/i.test(text) ? 'ok' : '');
+  }
+
+  /* ---------- serial ---------- */
+  async function readLoop() {
+    reader = port.readable.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          handleLine(buf.slice(0, i).trim());
+          buf = buf.slice(i + 1);
+        }
+        if (buf.length > 4096) buf = '';
+      }
+    } catch (e) {
+      log('Connection lost: ' + e.message, 'bad');
+    } finally {
+      reader.releaseLock();
+      reader = null;
+    }
+    await closePort();
+  }
+
+  async function closePort() {
+    if (writer) { try { writer.releaseLock(); } catch (e) {} writer = null; }
+    if (port)   { try { await port.close(); }  catch (e) {} port = null; }
+    connected = false;
+    rate = 0;
+    updateUi();
+  }
+
+  async function connect() {
+    if (!('serial' in navigator)) return;
+    try {
+      port = await navigator.serial.requestPort();
+    } catch (e) { return; }                        // closed the chooser
+    try {
+      await port.open({ baudRate: 115200 });
+    } catch (e) {
+      port = null;
+      log("Couldn't open that port. Close the Arduino Serial Monitor (only one program can use it) and try again.", 'bad');
+      return;
+    }
+    stopDemo();
+    connected = true;
+    writer = port.writable.getWriter();
+    updateUi();
+    readLoop();
+  }
+
+  async function disconnect() {
+    if (reader) { try { await reader.cancel(); } catch (e) {} }
+  }
+
+  function send(ch) {
+    if (writer) writer.write(new TextEncoder().encode(ch)).catch(() => {});
+  }
+
+  /* ---------- demo ---------- */
+  function startDemo() {
+    demo = true;
+    demoOffset = 0;
+    const t0 = performance.now();
+    demoTimer = setInterval(() => {
+      const t = (performance.now() - t0) / 1000;
+      demoRawH = 110 * Math.sin(t * 0.5);
+      handleSample(demoRawH - demoOffset,
+                   55 * Math.cos(t * 0.5),
+                   14 * Math.sin(t * 0.9),
+                   18 * Math.sin(t * 0.7));
+    }, 40);
+    updateUi();
+  }
+  function stopDemo() {
+    demo = false;
+    clearInterval(demoTimer);
+    updateUi();
+  }
+
+  /* ---------- drawing ---------- */
+  function drawChart(cv, arr, color, minSpan) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+    }
+    const c = cv.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, w, h);
+
+    let lo = 0, hi = 0;
+    for (const v of arr) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    if (hi - lo < minSpan) { const m = (hi + lo) / 2; lo = m - minSpan / 2; hi = m + minSpan / 2; }
+    const pad = 8;
+    const y = v => h - pad - (v - lo) / (hi - lo) * (h - 2 * pad);
+
+    c.strokeStyle = '#233049'; c.lineWidth = 1; c.setLineDash([4, 4]);
+    c.beginPath(); c.moveTo(0, y(0)); c.lineTo(w, y(0)); c.stroke();
+    c.setLineDash([]);
+
+    c.fillStyle = '#8a98b3'; c.font = '11px system-ui, sans-serif';
+    c.fillText(Math.round(hi), 4, 12);
+    c.fillText(Math.round(lo), 4, h - 4);
+
+    if (arr.length < 2) return;
+    c.strokeStyle = color; c.lineWidth = 2; c.lineJoin = 'round';
+    c.beginPath();
+    arr.forEach((v, i) => {
+      const x = w - (arr.length - 1 - i) / (MAX - 1) * w;
+      i ? c.lineTo(x, y(v)) : c.moveTo(x, y(v));
+    });
+    c.stroke();
+  }
+
+  const sgn = n => (n >= 0 ? '+' : '') + n.toFixed(1);
+  function paint() {
+    $('vH').textContent = sgn(cur.h);
+    $('vG').textContent = sgn(cur.g);
+    $('vP').textContent = sgn(cur.p);
+    $('vR').textContent = sgn(cur.r);
+    $('needle').setAttribute('transform', `rotate(${-cur.h} 100 100)`);
+    $('board').style.transform =
+      `translateZ(40px) rotateZ(${-cur.h}deg) rotateX(${-cur.p}deg) rotateY(${cur.r}deg)`;
+    $('shadow').style.transform = `rotateZ(${-cur.h}deg)`;
+    drawChart($('cG'), gArr, COL_G, 60);
+    drawChart($('cH'), hArr, COL_H, 60);
+  }
+  function frame() {
+    if (dirty) { dirty = false; paint(); }
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------- wiring up ---------- */
+  $('btnConnect').addEventListener('click', () => connected ? disconnect() : connect());
+  $('btnDemo').addEventListener('click', () => demo ? stopDemo() : startDemo());
+  $('btnZero').addEventListener('click', () => {
+    if (connected) send('z');
+    else if (demo) demoOffset = demoRawH;
+  });
+  $('btnCal').addEventListener('click', () => {
+    log('Recalibrating - keep the board still...');
+    send('c');
+  });
+
+  for (const k of ['Turn', 'Pitch', 'Roll']) {
+    const box = $('flip' + k), key = k.toLowerCase();
+    box.checked = !!flips[key];
+    box.addEventListener('change', () => {
+      flips[key] = box.checked;
+      try { localStorage.setItem('imuFlips', JSON.stringify(flips)); } catch (e) {}
+    });
+  }
+
+  if (!('serial' in navigator)) $('unsupported').hidden = false;
+  window.addEventListener('resize', () => { dirty = true; });
+
+  setInterval(() => { rate = rateCount; rateCount = 0; if (connected || demo) updateUi(); }, 1000);
+
+  updateUi();
+  frame();
+})();
+</script>
+</body>
+</html>

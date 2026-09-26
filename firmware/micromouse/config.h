@@ -78,6 +78,15 @@ constexpr uint16_t TOF_MAX_MM = 1200;     // anything further is treated as "not
 // +1 if turning the mouse LEFT (anticlockwise from above) makes 's' show a
 // growing yaw, -1 if it shrinks.
 constexpr float GYRO_Z_SIGN = 1.0f;  // CALIBRATE
+// MPU-6050s can read up to ~3% high or low, which is ~3 degrees per 90 degree
+// turn. CALIBRATE: put the mouse square against a straight edge, type 'l' four
+// times (a full turn) and see how far off square it ends. If it turned too far
+// by x degrees, use 360 / (360 + x); too little, 360 / (360 - x).
+constexpr float GYRO_SCALE = 1.0f;
+// While stopped, the gyro bias is re-learned (stops drift). Fraction per reading.
+constexpr float GYRO_BIAS_LEARN_GAIN = 0.02f;
+constexpr float GYRO_BIAS_LEARN_MAX_DPS = 1.0f;  // only learn from readings this close to the bias
+constexpr uint32_t LOOK_PAUSE_MS = 100;  // pause in each new cell before reading the walls
 
 // ========================= Speeds and gains =============================
 constexpr int EXPLORE_PWM = 90;     // top speed while mapping
@@ -87,8 +96,29 @@ constexpr int MIN_PWM = 45;         // CALIBRATE: lowest PWM that still moves th
 constexpr float RAMP_PWM_PER_MM = 1.0f;  // acceleration/braking ramp
 
 constexpr float KP_HEADING = 3.0f;  // PWM per degree off course
+constexpr float KI_HEADING = 8.0f;  // PWM per degree-second: learns the left/right motor mismatch
+constexpr float HEADING_I_LIMIT = 3.0f;  // degree-seconds (caps the trim at KI x this PWM)
 constexpr float KP_WALL = 0.6f;     // PWM per mm off centre between walls
 constexpr int MAX_STEER = 40;
+// The gyro drifts a few degrees a minute. While passing a side wall the mouse
+// measures its true angle to it and pulls the gyro back by this fraction.
+constexpr float WALL_YAW_GAIN = 0.5f;
+constexpr float WALL_FIT_SPAN_MM = 80;  // how much wall to follow per measurement
+constexpr float WALL_FIT_ZONE_MM = 60;  // only use readings this close to a cell centre
+constexpr float WALL_FIT_MAX_RMS_MM = 4;  // reject fits noisier than this (not a clean wall)
+constexpr float WALL_YAW_MAX_FIX_DEG = 3;  // largest correction per measurement
+// Where the mouse's centre is, relative to a cell boundary, at the moment a
+// side sensor sees a wall end / start. Depends on where the side sensors sit
+// and their cone. CALIBRATE: type 'v' then 'f' along walls with gaps; if the
+// printed corrections are mostly +x mm, add x to both.
+constexpr float WALL_END_OFFSET_MM = 10;
+constexpr float WALL_START_OFFSET_MM = -12;
+constexpr float WALL_EDGE_HYSTERESIS_MM = 40;  // reading must pass WALL_SIDE_MM + this to count as open
+constexpr float WALL_EDGE_MAX_FIX_MM = 20;     // ignore edge "corrections" bigger than this
+constexpr float WALL_EDGE_GAIN = 0.5f;         // fraction of each edge correction applied (averages out noise)
+// A wall ahead closer than this is used to correct the distance travelled.
+constexpr uint16_t FRONT_ALIGN_RANGE_MM = 250;
+constexpr float FRONT_ALIGN_GAIN = 0.2f;       // fraction of the error fixed per reading
 
 // ============================= Diagonals ================================
 // Speed runs cut 45 degree diagonals through staircases when that's faster
@@ -97,7 +127,11 @@ constexpr int MAX_STEER = 40;
 // first, and try the 'D' bench test before enabling it for real runs.
 // The mouse spins between two posts and passes post corners ~64 mm from its
 // centre line, so it must be under ~110 mm wide (measure yours!).
-constexpr bool USE_DIAGONALS = true;
+// OFF by default: in the virtual-robot tests (sim/robot) the grid speed run is
+// reliable, but diagonals still clip posts, mainly the 45 degree cut through
+// one-cell gaps where there's under 2 cm to spare. Try it only after the grid
+// run works on the real maze and 'D' ends within 1 cm.
+constexpr bool USE_DIAGONALS = false;
 constexpr bool EXPLORE_FOR_DIAGONALS = true;  // look at unexplored cells a shortcut might use
 constexpr int DIAG_PWM = 100;        // top speed on diagonals (slower: no wall feedback)
 constexpr uint16_t DIAG_EMERGENCY_STOP_MM = 25;  // front reading that aborts a diagonal
@@ -114,3 +148,7 @@ constexpr float TURN_KP = 2.0f;     // PWM per degree still to turn
 constexpr int TURN_MIN_PWM = 55;
 constexpr int TURN_MAX_PWM = 110;
 constexpr float TURN_TOLERANCE_DEG = 2.0f;
+// CALIBRATE: how long the mouse keeps spinning after the motors stop. Turn
+// with 'l' and 'r' and read the yaw: overshooting by x degrees at y dps means
+// add x / y here (it stops the motors that much earlier).
+constexpr float TURN_COAST_S = 0.02f;

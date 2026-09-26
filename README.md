@@ -20,6 +20,17 @@ MPU-6050 IMU, 3× VL53L0X). The maze solver is shared: the **same** `Maze.h` /
 5. Serial Monitor at **115200** baud. You should see `PASS` for the three ToF
    sensors and the IMU. Type `h` for the test commands.
 
+Faster, from a terminal (uses the arduino-cli that comes with the IDE, and
+saves every serial session to `logs/` so you can share real output):
+
+```bash
+python tools/mouse.py upload
+python tools/mouse.py debug 02_imu
+python tools/mouse.py test
+```
+
+`upload` builds, flashes and opens the monitor. `debug` flashes a Debug Kit step, and `test` runs all the offline tests with no board.
+
 Plug in USB with the **battery switched off** (the ESP32 must never get USB
 and the battery's 5 V at the same time). Test motors with the wheels off the
 table. All pins and tuning numbers are in `config.h`. Change them there and
@@ -36,10 +47,15 @@ firmware/micromouse/   Arduino sketch that gets flashed to the ESP32-C6
   Maze.h, Solver.h       maze map + flood-fill solver (no Arduino code, shared with sim)
   DiagonalPlanner.h      fastest speed run with 45° diagonals (shared with sim)
 sim/                   runs the same solver inside the mms simulator
+sim/robot/             virtual robot: runs the real firmware against simulated hardware
+debug-kit/             the event's official Debug Kit sketches (unchanged)
 mazes/                 the event maze (mms text file) and drawings of its fastest route
+tools/mouse.py         build / flash / monitor / Debug Kit / tests in one command
 tools/fake_mms.py      headless test: runs the solver on hundreds of mazes
 tools/draw_maze.py     draws a maze file with its fastest route
 docs/pinout.md         the wiring the code expects
+docs/CONTEXT.md        hardware context pack for teammates and AI agents
+CLAUDE.md              rules for AI coding agents working on this repo
 ```
 
 ## How the solver works
@@ -122,12 +138,12 @@ the diagonal run takes 11987 time units against 15166 on the grid (21%
 faster), the fastest possible for this maze. `mazes/dublin2026_diagonal.png`
 shows the route. Run the simulator without diagonals with `mouse.exe 4 nodiag`.
 
-On the real mouse, diagonals steer on gyro + encoders only (the side sensors
-see walls at 45°), so they depend on good calibration. Before enabling them in
-a real run: finish the calibration table below, then use `D` on open floor
-until the mouse ends within ~1 cm of "1 cell right, 2 cells ahead". The mouse
-must be under ~110 mm wide to clear the posts. If it clips posts or drifts,
-set `USE_DIAGONALS = false` in `config.h` and it goes back to the grid route.
+On the real mouse diagonals are implemented but **off by default**
+(`USE_DIAGONALS = false`). In the virtual-robot tests they still clip posts,
+mainly on the 45° cut through a one-cell gap, where an 80 mm mouse has under
+2 cm to spare and the side sensors can't help. Grid runs pass every test. Only
+try diagonals once the grid run works on the real maze and `D` (on open floor)
+ends within 1 cm of "1 cell right, 2 cells ahead".
 
 If the organisers change the maze, fix the text file and redraw it:
 
@@ -164,10 +180,41 @@ measured.
 | 5 | Put the mouse in the middle of a maze cell, walls left, right and ahead. `s` a few times. | `SIDE_CENTRE_MM` = average of L and R. `FRONT_STOP_MM` = F |
 | 6 | Same cell with the walls removed. `s`. | Set `WALL_SIDE_MM` / `WALL_FRONT_MM` halfway between wall and no-wall readings. Then `w` should report walls correctly |
 | 7 | On the floor: `f`. It should drive one cell (180 mm) straight. | Drifts: `KP_HEADING`/`KP_WALL`. Wrong distance: step 4. Stalls: raise `MIN_PWM` |
-| 8 | `l`, `r`, `a`: 90°, 90°, 180°. | Overshoots/wobbles: lower `TURN_KP` or `TURN_MAX_PWM`. Stalls short: raise `TURN_MIN_PWM` |
+| 8 | `l`, `r`, `a`: 90°, 90°, 180°. | Overshoots/wobbles: lower `TURN_KP` or `TURN_MAX_PWM`. Stalls short: raise `TURN_MIN_PWM`. Consistently a few degrees over: raise `TURN_COAST_S` |
+| 9 | Mouse square against a straight edge, `l` four times (a full turn). | Ends off square: `GYRO_SCALE` (formula in `config.h`) |
+| 10 | `v`, then `f` repeatedly along walls that have gaps. | Printed "distance corrected" values mostly +x mm: add x to both `WALL_END_OFFSET_MM` and `WALL_START_OFFSET_MM` |
 
 The mouse turns on the spot, so the wheel axle should sit in the middle of
 the cell when it's centred.
+
+## The virtual robot (test motion code without the mouse)
+
+`sim/robot/` compiles the **real, unmodified** `micromouse.ino` on the laptop
+against fake hardware:
+- **Motors:** lag, a deadband, and one wheel 3% weaker.
+- **Encoders:** real quadrature pulses into the interrupt code, with a 1% wheel-size error.
+- **Gyro:** a register-level MPU-6050 with bias, noise and drift.
+- **Distance sensors:** three VL53L0X, ray-cast against the maze walls and posts.
+
+It presses BOOT and runs a whole competition, failing if the body ever touches
+a wall.
+
+```bash
+python tools/mouse.py test
+sim/robot/robot_sim.exe mazes/dublin2026.txt 3 -v
+```
+
+`test` also runs the virtual robot. The second command runs one maze with random seed 3 and `-v` logs every cell, showing true vs believed position.
+
+Building it found and fixed real bugs that would have hit the real mouse:
+- **Gyro drift:** now corrected from the side walls, and the bias is re-learned whenever the mouse stops.
+- **Distance errors building up cell by cell:** now fixed with overshoot carry-over, and position fixes from wall edges and walls ahead.
+- **Spinning off-centre at corners:** now it lines up on the wall ahead before turning.
+
+Result: 24/24 full competitions pass (3 mazes × 8 seeds), with 0 wrong walls in every map.
+
+It's still a model. Real motors, sensor noise and your mouse's size will
+differ, so calibrate on the real maze.
 
 ## Part 4: Running it
 
